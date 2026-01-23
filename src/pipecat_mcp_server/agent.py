@@ -1,0 +1,270 @@
+#
+# Copyright (c) 2026, Daily
+#
+# SPDX-License-Identifier: BSD 2-Clause License
+#
+
+"""Pipecat MCP Agent for voice I/O over MCP protocol.
+
+This module provides the `PipecatMCPAgent` class that exposes voice input/output
+capabilities through MCP tools. It manages a Pipecat pipeline with STT and TTS
+services, allowing an MCP client to listen for user speech and speak responses.
+"""
+
+import asyncio
+import os
+from typing import Optional
+
+from dotenv import load_dotenv
+from loguru import logger
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.frames.frames import (
+    EndFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
+)
+from pipecat.pipeline.pipeline import Pipeline
+from pipecat.pipeline.runner import PipelineRunner
+from pipecat.pipeline.task import PipelineTask
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+    UserTurnStoppedMessage,
+)
+from pipecat.processors.frameworks.rtvi import RTVIObserver, RTVIProcessor
+from pipecat.runner.types import RunnerArguments
+from pipecat.runner.utils import create_transport
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.transports.daily.transport import DailyParams
+from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
+from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+    TurnAnalyzerUserTurnStopStrategy,
+)
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
+
+load_dotenv(override=True)
+
+
+class PipecatMCPAgent:
+    """Pipecat MCP Agent that exposes voice I/O tools.
+
+    Tools:
+    - listen(): Wait for user speech and return transcription
+    - speak(text): Speak text to the user via TTS
+    """
+
+    def __init__(
+        self,
+        transport: BaseTransport,
+        runner_args: RunnerArguments,
+    ):
+        """Initialize the Pipecat MCP Agent.
+
+        Args:
+            transport: Transport for audio I/O (Daily, Twilio, or WebRTC).
+            runner_args: Runner configuration arguments.
+
+        """
+        self._transport = transport
+        self._runner_args = runner_args
+
+        self._task: Optional[asyncio.Task] = None
+        self._pipeline_task: Optional[PipelineTask] = None
+        self._pipeline_runner: Optional[PipelineRunner] = None
+        self._user_speech_queue: asyncio.Queue[str] = asyncio.Queue()
+
+        self._started = False
+
+    async def start(self):
+        """Start the voice pipeline.
+
+        Initializes STT and TTS services, creates the processing pipeline,
+        and starts it in the background. The pipeline remains active until
+        `stop()` is called.
+
+        Raises:
+            ValueError: If required API keys are missing from environment.
+
+        """
+        if self._started:
+            return
+
+        logger.info("Starting Pipecat MCP Agent...")
+
+        # Validate required env vars
+        deepgram_key = os.getenv("DEEPGRAM_API_KEY")
+        if not deepgram_key:
+            raise ValueError("DEEPGRAM_API_KEY environment variable is required")
+
+        cartesia_key = os.getenv("CARTESIA_API_KEY")
+        if not cartesia_key:
+            raise ValueError("CARTESIA_API_KEY environment variable is required")
+
+        # Create services
+        stt = DeepgramSTTService(api_key=deepgram_key)
+        tts = CartesiaTTSService(
+            api_key=cartesia_key,
+            voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
+        )
+
+        context = LLMContext()
+        user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+            context,
+            user_params=LLMUserAggregatorParams(
+                user_turn_strategies=UserTurnStrategies(
+                    stop=[
+                        TurnAnalyzerUserTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
+                    ]
+                ),
+            ),
+        )
+
+        rtvi = RTVIProcessor()
+
+        # Create pipeline
+        pipeline = Pipeline(
+            [
+                self._transport.input(),
+                rtvi,
+                stt,
+                user_aggregator,
+                tts,
+                # Assistant aggregator before the transport, because we want to
+                # keep everyting from the client.
+                assistant_aggregator,
+                self._transport.output(),
+            ]
+        )
+
+        @self._transport.event_handler("on_client_connected")
+        async def on_connected(transport, client):
+            logger.info(f"Client connected")
+            await rtvi.set_bot_ready()
+
+        @self._transport.event_handler("on_client_disconnected")
+        async def on_disconnected(transport, client):
+            logger.info(f"Client disconnected")
+
+        @user_aggregator.event_handler("on_user_turn_stopped")
+        async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
+            await self._user_speech_queue.put(message.content)
+
+        self._pipeline_task = PipelineTask(pipeline, observers=[RTVIObserver(rtvi)])
+        self._pipeline_runner = PipelineRunner()
+
+        # Start pipeline in background
+        self._task = asyncio.create_task(self._pipeline_runner.run(self._pipeline_task))
+
+        self._started = True
+        logger.info("Pipecat MCP Agent started!")
+
+    async def stop(self):
+        """Stop the voice pipeline.
+
+        Sends an `EndFrame` to gracefully shut down the pipeline and waits
+        for the background task to complete.
+        """
+        if not self._started:
+            return
+
+        logger.info("Stopping Pipecat MCP agent...")
+
+        if self._pipeline_task:
+            await self._pipeline_task.queue_frame(EndFrame())
+
+        if self._task:
+            await self._task
+
+        self._started = False
+        logger.info("Pipecat MCP Agent stopped")
+
+    async def listen(self) -> str:
+        """Wait for user speech and return the transcribed text.
+
+        Blocks until the user completes an utterance (detected via VAD).
+        Starts the pipeline automatically if not already running.
+
+        Returns:
+            The transcribed text from the user's speech.
+
+        Raises:
+            RuntimeError: If the pipeline task is not initialized.
+
+        """
+        if not self._started:
+            await self.start()
+
+        if not self._pipeline_task:
+            raise RuntimeError("Pipecat MCP Agent not initialized")
+
+        text = await self._user_speech_queue.get()
+        return text
+
+    async def speak(self, text: str):
+        """Speak text to the user using text-to-speech.
+
+        Queues LLM response frames to synthesize and play the given text.
+        Starts the pipeline automatically if not already running.
+
+        Args:
+            text: The text to speak to the user.
+
+        Raises:
+            RuntimeError: If the pipeline task is not initialized.
+
+        """
+        if not self._started:
+            await self.start()
+
+        if not self._pipeline_task:
+            raise RuntimeError("Pipecat MCP Agent not initialized")
+
+        await self._pipeline_task.queue_frames(
+            [
+                LLMFullResponseStartFrame(),
+                LLMTextFrame(text=text),
+                LLMFullResponseEndFrame(),
+            ]
+        )
+
+
+# We store functions so objects (e.g. SileroVADAnalyzer) don't get
+# instantiated. The function will be called when the desired transport gets
+# selected.
+transport_params = {
+    "daily": lambda: DailyParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+    ),
+    "twilio": lambda: FastAPIWebsocketParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+    ),
+    "webrtc": lambda: TransportParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+    ),
+}
+
+
+async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
+    """Create a PipecatMCPAgent with the appropriate transport.
+
+    Args:
+        runner_args: Runner configuration specifying transport type and settings.
+
+    Returns:
+        A configured `PipecatMCPAgent` instance ready to be started.
+
+    """
+    transport = await create_transport(runner_args, transport_params)
+    return PipecatMCPAgent(transport, runner_args)
