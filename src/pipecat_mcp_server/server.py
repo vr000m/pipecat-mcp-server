@@ -16,8 +16,6 @@ Tools:
     stop: Gracefully shut down the voice pipeline.
 """
 
-import asyncio
-import atexit
 import sys
 
 from loguru import logger
@@ -30,7 +28,7 @@ logger.remove()
 logger.add(sys.stderr, level="DEBUG")
 
 # Create MCP server
-mcp = FastMCP(name="pipecat-mcp-server")
+mcp = FastMCP(name="pipecat-mcp-server", host="localhost", port=9090)
 
 
 @mcp.tool()
@@ -82,8 +80,12 @@ def main():
     Runs the MCP server using stdio for communication with the MCP client.
     When the server exits, any running Pipecat agent process is cleaned up.
     """
-    atexit.register(stop_pipecat_process)
-    mcp.run()
+    try:
+        mcp.run(transport="streamable-http")
+    except KeyboardInterrupt:
+        logger.info("Ctrl-C detected, exiting!")
+    finally:
+        stop_pipecat_process()
 
 
 if __name__ == "__main__":
