@@ -155,7 +155,12 @@ class PipecatMCPAgent:
         async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
             await self._user_speech_queue.put(message.content)
 
-        self._pipeline_task = PipelineTask(pipeline, observers=[RTVIObserver(rtvi)])
+        self._pipeline_task = PipelineTask(
+            pipeline,
+            cancel_on_idle_timeout=False,
+            observers=[RTVIObserver(rtvi)],
+        )
+
         self._pipeline_runner = PipelineRunner()
 
         # Start pipeline in background
