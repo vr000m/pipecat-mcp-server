@@ -18,10 +18,16 @@ Tools:
 
 import asyncio
 import atexit
+import sys
 
+from loguru import logger
 from mcp.server.fastmcp import FastMCP
 
 from pipecat_mcp_server.agent_ipc import send_command, start_pipecat_process, stop_pipecat_process
+
+# Configure any loguru logging to stderr, not stdout
+logger.remove()
+logger.add(sys.stderr, level="DEBUG")
 
 # Create MCP server
 mcp = FastMCP(name="pipecat-mcp-server")
