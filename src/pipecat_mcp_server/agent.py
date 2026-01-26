@@ -36,12 +36,16 @@ from pipecat.processors.aggregators.llm_response_universal import (
     UserTurnStoppedMessage,
 )
 from pipecat.processors.frameworks.rtvi import RTVIObserver, RTVIProcessor
-from pipecat.runner.types import RunnerArguments
+from pipecat.runner.types import (
+    DailyRunnerArguments,
+    RunnerArguments,
+    SmallWebRTCRunnerArguments,
+    WebSocketRunnerArguments,
+)
 from pipecat.runner.utils import create_transport
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
-from pipecat.transports.daily.transport import DailyParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
     TurnAnalyzerUserTurnStopStrategy,
@@ -244,30 +248,6 @@ class PipecatMCPAgent:
         )
 
 
-# We store functions so objects (e.g. SileroVADAnalyzer) don't get
-# instantiated. The function will be called when the desired transport gets
-# selected.
-transport_params = {
-    "daily": lambda: DailyParams(
-        audio_in_enabled=True,
-        audio_out_enabled=True,
-        video_out_enabled=True,
-        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-    ),
-    "twilio": lambda: FastAPIWebsocketParams(
-        audio_in_enabled=True,
-        audio_out_enabled=True,
-        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-    ),
-    "webrtc": lambda: TransportParams(
-        audio_in_enabled=True,
-        audio_out_enabled=True,
-        video_out_enabled=True,
-        vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
-    ),
-}
-
-
 async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
     """Create a PipecatMCPAgent with the appropriate transport.
 
@@ -278,5 +258,35 @@ async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
         A configured `PipecatMCPAgent` instance ready to be started.
 
     """
+    transport_params = {}
+
+    # Create transport based on runner args type
+    if isinstance(runner_args, DailyRunnerArguments):
+        from pipecat.transports.daily.transport import DailyParams
+
+        transport_params["daily"] = lambda: DailyParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            video_out_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+        )
+    elif isinstance(runner_args, SmallWebRTCRunnerArguments):
+        transport_params["webrtc"] = lambda: TransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            video_out_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+        )
+    elif isinstance(runner_args, WebSocketRunnerArguments):
+        params_callback = lambda: FastAPIWebsocketParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+        )
+        transport_params["twilio"] = params_callback
+        transport_params["telnyx"] = params_callback
+        transport_params["plivo"] = params_callback
+        transport_params["exotel"] = params_callback
+
     transport = await create_transport(runner_args, transport_params)
     return PipecatMCPAgent(transport, runner_args)
