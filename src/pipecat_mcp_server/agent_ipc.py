@@ -12,8 +12,8 @@ process runs separately to avoid stdio collisions with the MCP protocol.
 """
 
 import asyncio
-import atexit
 import multiprocessing
+import queue as queue_module
 from typing import Optional
 
 # Use spawn to avoid issues with forking from async context Fork copies the
@@ -28,24 +28,21 @@ _pipecat_process: Optional[multiprocessing.Process] = None
 
 def _cleanup():
     """Clean up the pipecat child process."""
-    global _pipecat_process
-    if _pipecat_process is not None and _pipecat_process.is_alive():
-        # Try graceful shutdown first
-        try:
-            if _cmd_queue is not None:
-                _cmd_queue.put({"cmd": "stop"})
-                _pipecat_process.join(timeout=2.0)
-        except Exception:
-            pass
+    global _pipecat_process, _cmd_queue, _response_queue
 
+    logger.debug(f"Checking if Pipecat MCP Agent process is actually running...")
+    if _pipecat_process:
         # Force terminate if still alive
         if _pipecat_process.is_alive():
+            logger.debug(f"Terminating Pipecat MCP Agent process (PID {_pipecat_process.ident})")
             _pipecat_process.terminate()
             _pipecat_process.join(timeout=1.0)
 
         # Kill if terminate didn't work
         if _pipecat_process.is_alive():
+            logger.debug(f"Killing Pipecat MCP Agent process (PID {_pipecat_process.ident})")
             _pipecat_process.kill()
+            _pipecat_process.join(timeout=1.0)
 
         _pipecat_process = None
 
@@ -66,18 +63,20 @@ def start_pipecat_process():
     _response_queue = multiprocessing.Queue()
 
     # Start pipecat as separate process
+    logger.debug(f"Starting Pipecat MCP Agent process...")
     _pipecat_process = multiprocessing.Process(
         target=run_pipecat_process,
         args=(_cmd_queue, _response_queue),
     )
     _pipecat_process.start()
-
-    atexit.register(_cleanup)
+    logger.debug(f"Started Pipecat MCP Agent process (PID {_pipecat_process.ident})")
 
 
 def stop_pipecat_process():
     """Stop the pipecat child process (explicit cleanup)."""
+    logger.debug(f"Stopping Pipecat MCP Agent process...")
     _cleanup()
+    logger.debug(f"Stopped Pipecat MCP Agent")
 
 
 def run_pipecat_process(cmd_queue: multiprocessing.Queue, response_queue: multiprocessing.Queue):
@@ -98,7 +97,6 @@ def run_pipecat_process(cmd_queue: multiprocessing.Queue, response_queue: multip
 
     from loguru import logger
 
-    # Configure logging for child process (to stderr, not stdout)
     logger.remove()
     logger.add(sys.stderr, level="DEBUG")
 
@@ -112,7 +110,11 @@ def run_pipecat_process(cmd_queue: multiprocessing.Queue, response_queue: multip
     # Import and run the pipecat main (which will call our bot() function)
     from pipecat.runner.run import main as pipecat_main
 
+    logger.debug("Pipecat MCP Agent process started. Launching Pipecat runner!")
+
     pipecat_main()
+
+    logger.debug("Pipecat runner is done...")
 
 
 async def send_response(response: dict):
@@ -150,6 +152,26 @@ async def read_request() -> dict:
     return request
 
 
+def _get_with_timeout(queue: multiprocessing.Queue, timeout: float = 0.5):
+    """Get from queue with timeout to allow cancellation.
+
+    Args:
+        queue: The queue to read from.
+        timeout: Timeout in seconds.
+
+    Returns:
+        Item from the queue.
+
+    Raises:
+        TimeoutError: If the timeout expires before an item is available.
+
+    """
+    try:
+        return queue.get(timeout=timeout)
+    except queue_module.Empty:
+        raise TimeoutError("Queue get timed out")
+
+
 async def send_command(cmd: str, **kwargs) -> dict:
     """Send a command to the Pipecat child process and wait for response.
 
@@ -173,7 +195,15 @@ async def send_command(cmd: str, **kwargs) -> dict:
     # Use thread pool for blocking queue operations
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _cmd_queue.put, request)
-    response = await loop.run_in_executor(None, _response_queue.get)
+
+    # Use timeout and retry to allow cancellation
+    while True:
+        try:
+            response = await loop.run_in_executor(None, _get_with_timeout, _response_queue, 0.5)
+            break
+        except TimeoutError:
+            # Yield to event loop to check for cancellation
+            await asyncio.sleep(0)
 
     if "error" in response:
         raise RuntimeError(response["error"])
