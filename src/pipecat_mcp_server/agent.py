@@ -161,7 +161,7 @@ class PipecatMCPAgent:
             observers=[RTVIObserver(rtvi)],
         )
 
-        self._pipeline_runner = PipelineRunner()
+        self._pipeline_runner = PipelineRunner(handle_sigterm=True)
 
         # Start pipeline in background
         self._task = asyncio.create_task(self._pipeline_runner.run(self._pipeline_task))
