@@ -48,6 +48,8 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
+from pipecat_mcp_server.processors.screen_capture import ScreenCaptureProcessor
+
 load_dotenv(override=True)
 
 
@@ -127,11 +129,14 @@ class PipecatMCPAgent:
 
         rtvi = RTVIProcessor()
 
+        screen_capture = ScreenCaptureProcessor()
+
         # Create pipeline
         pipeline = Pipeline(
             [
                 self._transport.input(),
                 rtvi,
+                screen_capture,
                 stt,
                 user_aggregator,
                 tts,
@@ -246,6 +251,7 @@ transport_params = {
     "daily": lambda: DailyParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
+        video_out_enabled=True,
         vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
     ),
     "twilio": lambda: FastAPIWebsocketParams(
@@ -256,6 +262,7 @@ transport_params = {
     "webrtc": lambda: TransportParams(
         audio_in_enabled=True,
         audio_out_enabled=True,
+        video_out_enabled=True,
         vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
     ),
 }

@@ -65,11 +65,10 @@ def start_pipecat_process():
     _cmd_queue = multiprocessing.Queue()
     _response_queue = multiprocessing.Queue()
 
-    # Start pipecat as separate process (daemon so it exits when MCP stops)
+    # Start pipecat as separate process
     _pipecat_process = multiprocessing.Process(
         target=run_pipecat_process,
         args=(_cmd_queue, _response_queue),
-        daemon=True,
     )
     _pipecat_process.start()
 
