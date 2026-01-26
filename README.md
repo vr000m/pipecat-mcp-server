@@ -93,13 +93,14 @@ Create `.claude/settings.local.json` in your project directory:
       "Edit",
       "Write",
       "WebFetch",
+      "WebSearch",
       "mcp__pipecat__*"
     ]
   }
 }
 ```
 
-This grants permissions for Bash commands, file operations, web fetching, and all Pipecat MCP tools without prompting.
+This grants permissions for Bash commands, file operations, web fetching and searching, and all Pipecat MCP tools without prompting. See [available tools](https://code.claude.com/docs/en/settings#tools-available-to-claude) if you need to grant more perimssions.
 
 ### Starting a voice conversation
 
