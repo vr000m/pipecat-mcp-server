@@ -6,11 +6,18 @@
 
 # Pipecat MCP Server
 
-Pipecat MCP Server gives your AI agents a voice using [Pipecat](https://github.com/pipecat-ai/pipecat). It should work with any [MCP](https://modelcontextprotocol.io/)-compatible client, exposing four simple tools:
+Pipecat MCP Server gives your AI agents a voice using [Pipecat](https://github.com/pipecat-ai/pipecat). It should work with any [MCP](https://modelcontextprotocol.io/)-compatible client:
 
-- **start()** / **stop()**: Start and stop the voice agent
-- **listen()**: Wait for you to speak and return the transcription
-- **speak(text)**: Say something back to you
+The Pipecat MCP Server exposes **voice-related tools** (`start`, `listen`, `speak`, `stop`) to MCP-compatible clients, but **it does not itself provide microphone or speaker access**.
+
+Audio input/output is handled by a **separate audio transport**, such as:
+
+- **Pipecat Playground** (local browser UI)
+- **Daily** (WebRTC room)
+- **Phone providers** (Twilio, Telnyx, etc.)
+
+> **MCP clients like Cursor, Claude Code, and Codex control the agent, but they are not audio devices.**
+> To hear or speak, you must also connect via one of the audio transports.
 
 ## 🧭 Getting started
 
@@ -110,17 +117,10 @@ This grants permissions for bash commands, file operations, web fetching and sea
 
 ### Starting a voice conversation
 
-> ⚠️ **Note:** Cursor does not provide microphone or speaker access.
-> You must also connect to the agent using an audio transport (e.g. Pipecat Playground or Daily).
-
-1. Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md`  
-   (Cursor supports the Claude skills location).
+1. Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md`
 2. Start the Pipecat MCP Server.
 3. Connect to an audio transport (see **🗣️ Connecting to the voice agent** below).
-4. In a **new Cursor agent**, run `/pipecat`.
-
-Cursor will control the agent via MCP, while audio input/output happens through the selected transport.
-
+4. Run `/pipecat`.
 
 ## 💻 MCP Client: Cursor
 
@@ -144,7 +144,10 @@ Go to the `Auto-Run` agent settings and configure it to `Run Everything`.
 
 ### Starting a voice conversation
 
-Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md` (Cursor supports Claude skills location), then run `/pipecat` in a new Cursor agent.
+1. Install the Pipecat skill into `.claude/skills/pipecat/SKILL.md` (Cursor supports the Claude skills location).
+2. Start the Pipecat MCP Server.
+3. Connect to an audio transport (see **🗣️ Connecting to the voice agent** below).
+4. In a **new Cursor agent**, run `/pipecat`.
 
 ## 💻 MCP Client: OpenAI Codex
 
@@ -167,23 +170,10 @@ trust_level = "trusted"
 
 ### Starting a voice conversation
 
-Install the Pipecat skill into `.codex/skills/pipecat/SKILL.md`, then run `$pipecat` inside Codex.
-
----
-
-## ⚠️ Important: MCP vs Audio Transport
-
-The Pipecat MCP Server exposes **voice-related tools** (`start`, `listen`, `speak`) to MCP-compatible clients, but **it does not itself provide microphone or speaker access**.
-
-Audio input/output is handled by a **separate audio transport**, such as:
-
-- **Pipecat Playground** (local browser UI)
-- **Daily** (WebRTC room)
-- **Phone providers** (Twilio, Telnyx, etc.)
-
-> **MCP clients like Cursor, Claude Code, and Codex control the agent, but they are not audio devices.**  
-> To hear or speak, you must also connect via one of the audio transports below.
-
+1. Install the Pipecat skill into `.codex/skills/pipecat/SKILL.md`.
+2. Start the Pipecat MCP Server.
+3. Connect to an audio transport (see **🗣️ Connecting to the voice agent** below).
+4. Run `$pipecat`.
 
 ## 🗣️ Connecting to the voice agent
 
