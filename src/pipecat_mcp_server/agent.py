@@ -12,7 +12,7 @@ services, allowing an MCP client to listen for user speech and speak responses.
 """
 
 import asyncio
-import os
+import sys
 from typing import Any, Optional
 
 from dotenv import load_dotenv
@@ -43,8 +43,9 @@ from pipecat.runner.types import (
     WebSocketRunnerArguments,
 )
 from pipecat.runner.utils import create_transport
-from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.deepgram.stt import DeepgramSTTService
+from pipecat.services.stt_service import STTService
+from pipecat.services.tts_service import TTSService
+from pipecat.services.whisper.stt import WhisperSTTService, WhisperSTTServiceMLX
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
@@ -52,6 +53,7 @@ from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
+from pipecat_mcp_server.processors.kokoro_tts import KokoroTTSService
 from pipecat_mcp_server.processors.screen_capture import ScreenCaptureProcessor
 
 load_dotenv(override=True)
@@ -106,21 +108,9 @@ class PipecatMCPAgent:
 
         logger.info("Starting Pipecat MCP Agent pipeline...")
 
-        # Validate required env vars
-        deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-        if not deepgram_key:
-            raise ValueError("DEEPGRAM_API_KEY environment variable is required")
-
-        cartesia_key = os.getenv("CARTESIA_API_KEY")
-        if not cartesia_key:
-            raise ValueError("CARTESIA_API_KEY environment variable is required")
-
         # Create services
-        stt = DeepgramSTTService(api_key=deepgram_key)
-        tts = CartesiaTTSService(
-            api_key=cartesia_key,
-            voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
-        )
+        stt = self._create_stt_service()
+        tts = self._create_tts_service()
 
         context = LLMContext()
         user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
@@ -262,6 +252,15 @@ class PipecatMCPAgent:
                 LLMFullResponseEndFrame(),
             ]
         )
+
+    def _create_stt_service(self) -> STTService:
+        if sys.platform == "darwin":
+            return WhisperSTTServiceMLX()
+        else:
+            return WhisperSTTService()
+
+    def _create_tts_service(self) -> TTSService:
+        return KokoroTTSService(voice_id="af_heart")
 
 
 async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
