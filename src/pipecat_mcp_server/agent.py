@@ -172,7 +172,8 @@ class PipecatMCPAgent:
 
         @user_aggregator.event_handler("on_user_turn_stopped")
         async def on_user_turn_stopped(aggregator, strategy, message: UserTurnStoppedMessage):
-            await self._user_speech_queue.put(message.content)
+            if message.content:
+                await self._user_speech_queue.put(message.content)
 
         # Start pipeline in background
         self._task = asyncio.create_task(self._pipeline_runner.run(self._pipeline_task))
