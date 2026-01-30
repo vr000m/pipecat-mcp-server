@@ -19,6 +19,8 @@ Audio input/output is handled by a **separate audio transport**, such as:
 > **MCP clients like Cursor, Claude Code, and Codex control the agent, but they are not audio devices.**
 > To hear or speak, you must also connect via one of the audio transports.
 
+<p align="center"><video src="https://github.com/user-attachments/assets/0ad14e37-2de7-46df-870a-167aa667df16" width="500" controls></video></p>
+
 ## 🧭 Getting started
 
 ### Prerequisites
