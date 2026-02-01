@@ -34,12 +34,15 @@ class BaseCaptureBackend(ABC):
         """
 
     @abstractmethod
-    async def start(self, window_name: Optional[str], monitor: int) -> None:
+    async def start(self, window_id: Optional[int], monitor: int) -> Optional[int]:
         """Initialize capture for a window or monitor.
 
         Args:
-            window_name: Optional window title to capture (partial match, case-insensitive).
-            monitor: Monitor index to capture when window_name is None.
+            window_id: Optional window ID to capture (from list_windows()).
+            monitor: Monitor index to capture when window_id is None.
+
+        Returns:
+            The window ID if found, or None if not found or capturing full screen.
 
         """
 

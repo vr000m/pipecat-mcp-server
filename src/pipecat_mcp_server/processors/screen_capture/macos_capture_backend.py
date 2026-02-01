@@ -83,8 +83,12 @@ def _cgimage_to_rgb(cg_image) -> Optional[Tuple[bytes, Tuple[int, int]]]:
     return (rgb, (width, height))
 
 
-async def _get_shareable_content():
+async def _get_shareable_content(exclude_desktop: bool = False, onscreen_only: bool = False):
     """Enumerate shareable content (windows and displays).
+
+    Args:
+        exclude_desktop: If True, exclude desktop wallpaper windows.
+        onscreen_only: If True, only include windows currently on screen.
 
     Returns:
         An SCShareableContent instance.
@@ -97,6 +101,8 @@ async def _get_shareable_content():
     future: asyncio.Future = loop.create_future()
 
     def handler(content, error):
+        if future.done():
+            return
         if error is not None:
             err_str = str(error)
             if "permission" in err_str.lower() or "denied" in err_str.lower():
@@ -115,54 +121,14 @@ async def _get_shareable_content():
             return
         loop.call_soon_threadsafe(future.set_result, content)
 
-    _SCKit.SCShareableContent.getShareableContentWithCompletionHandler_(handler)
+    if exclude_desktop or onscreen_only:
+        _SCKit.SCShareableContent.getShareableContentExcludingDesktopWindows_onScreenWindowsOnly_completionHandler_(
+            exclude_desktop, onscreen_only, handler
+        )
+    else:
+        _SCKit.SCShareableContent.getShareableContentWithCompletionHandler_(handler)
 
     return await future
-
-
-def _make_window_filter(content, window_name: str):
-    """Create an SCContentFilter for a specific window.
-
-    Args:
-        content: SCShareableContent instance.
-        window_name: Window title to search for (partial match, case-insensitive).
-
-    Returns:
-        An SCContentFilter or None if no matching window found.
-
-    """
-    search = window_name.lower()
-    for window in content.windows():
-        title = window.title()
-        if title and search in title.lower():
-            logger.debug(f"Found window: '{title}' (ID: {window.windowID()})")
-            return _SCKit.SCContentFilter.alloc().initWithDesktopIndependentWindow_(window)
-
-    return None
-
-
-def _make_display_filter(content, monitor_index: int):
-    """Create an SCContentFilter for a display.
-
-    Args:
-        content: SCShareableContent instance.
-        monitor_index: Index into the displays list.
-
-    Returns:
-        An SCContentFilter for the requested display.
-
-    """
-    displays = content.displays()
-    if monitor_index >= len(displays):
-        logger.warning(f"Monitor index {monitor_index} out of range, using primary display")
-        monitor_index = 0
-
-    display = displays[monitor_index]
-    logger.debug(f"Using display {display.displayID()} (index {monitor_index})")
-
-    # Capture entire display excluding no windows
-    f = _SCKit.SCContentFilter.alloc().initWithDisplay_excludingWindows_(display, [])
-    return f
 
 
 class MacOSCaptureBackend(BaseCaptureBackend):
@@ -174,63 +140,127 @@ class MacOSCaptureBackend(BaseCaptureBackend):
 
     def __init__(self):
         """Initialize the macOS capture backend."""
-        self._filter: Optional[object] = None
-        self._config: Optional[object] = None
+        self._window_id: Optional[int] = None
+        self._monitor: int = 0
 
     async def list_windows(self) -> List[WindowInfo]:
         """List all open windows via ScreenCaptureKit."""
         _ensure_frameworks()
+        from AppKit import NSApplicationActivationPolicyRegular, NSRunningApplication
 
-        content = await _get_shareable_content()
+        content = await _get_shareable_content(exclude_desktop=True)
         windows = []
         for window in content.windows():
-            title = window.title() or ""
+            # Only include normal-layer windows (layer 0) that belong to an app
+            if window.windowLayer() != 0:
+                continue
             app = window.owningApplication()
+            if not app:
+                continue
+            # Only include windows from regular (Dock-visible) apps
+            bundle_id = app.bundleIdentifier()
+            if bundle_id:
+                ns_apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_id)
+                if (
+                    ns_apps
+                    and ns_apps[0].activationPolicy() != NSApplicationActivationPolicyRegular
+                ):
+                    continue
+
+            title = window.title() or ""
+            if not title:
+                continue
             app_name = app.applicationName() if app else ""
-            windows.append(WindowInfo(
-                title=title,
-                app_name=app_name,
-                window_id=window.windowID(),
-            ))
+            windows.append(
+                WindowInfo(
+                    title=title,
+                    app_name=app_name,
+                    window_id=window.windowID(),
+                )
+            )
         return windows
 
-    async def start(self, window_name: Optional[str], monitor: int) -> None:
-        """Set up the ScreenCaptureKit filter and configuration.
+    async def start(self, window_id: Optional[int], monitor: int) -> Optional[int]:
+        """Store the target window ID and monitor index.
 
         Args:
-            window_name: Optional window title to capture.
+            window_id: Optional window ID to capture (from list_windows()).
             monitor: Monitor index when not capturing a specific window.
+
+        Returns:
+            The window ID if found, or None if not found or capturing full screen.
 
         """
         _ensure_frameworks()
 
-        content = await _get_shareable_content()
+        self._monitor = monitor
+        matched_id = None
 
-        if window_name:
-            self._filter = _make_window_filter(content, window_name)
-        if self._filter is None:
-            if window_name:
-                logger.warning(f"Window '{window_name}' not found, falling back to full screen")
-            self._filter = _make_display_filter(content, monitor)
+        if window_id is not None:
+            # Verify the window exists
+            content = await _get_shareable_content()
+            for window in content.windows():
+                if window.windowID() == window_id:
+                    title = window.title() or ""
+                    logger.debug(f"Found window: '{title}' (ID: {window_id})")
+                    self._window_id = window_id
+                    matched_id = window_id
+                    break
+            if matched_id is None:
+                logger.warning(f"Window ID {window_id} not found, falling back to full screen")
+                self._window_id = None
+        else:
+            self._window_id = None
 
-        self._config = _SCKit.SCStreamConfiguration.alloc().init()
-        # Capture at screen scale (Retina)
-        self._config.setScalesToFit_(True)
+        return matched_id
 
     async def capture(self) -> Optional[Tuple[bytes, Tuple[int, int]]]:
         """Capture a single screenshot via SCScreenshotManager.
+
+        Each call freshly resolves the window/display filter to avoid stale state.
 
         Returns:
             Tuple of (rgb_bytes, (width, height)) or None on failure.
 
         """
-        if self._filter is None or self._config is None:
-            return None
+        content = await _get_shareable_content()
 
+        # Build filter
+        sc_filter = None
+        if self._window_id is not None:
+            for window in content.windows():
+                if window.windowID() == self._window_id:
+                    sc_filter = _SCKit.SCContentFilter.alloc().initWithDesktopIndependentWindow_(
+                        window
+                    )
+                    break
+            if sc_filter is None:
+                logger.warning(f"Window ID {self._window_id} no longer found")
+                return None
+
+        if sc_filter is None:
+            # Full screen capture
+            displays = content.displays()
+            monitor_index = self._monitor
+            if monitor_index >= len(displays):
+                logger.warning(f"Monitor index {monitor_index} out of range, using primary display")
+                monitor_index = 0
+            display = displays[monitor_index]
+            sc_filter = _SCKit.SCContentFilter.alloc().initWithDisplay_excludingWindows_(
+                display, []
+            )
+
+        # Build config
+        config = _SCKit.SCStreamConfiguration.alloc().init()
+        config.setScalesToFit_(True)
+
+        # Capture
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
 
         def handler(image, error):
+            if future.done():
+                return
             if error is not None:
                 err_str = str(error)
                 if "permission" in err_str.lower() or "denied" in err_str.lower():
@@ -249,11 +279,14 @@ class MacOSCaptureBackend(BaseCaptureBackend):
             loop.call_soon_threadsafe(future.set_result, image)
 
         _SCKit.SCScreenshotManager.captureImageWithFilter_configuration_completionHandler_(
-            self._filter, self._config, handler
+            sc_filter, config, handler
         )
 
         try:
-            cg_image = await future
+            cg_image = await asyncio.wait_for(future, timeout=1.0)
+        except asyncio.TimeoutError:
+            logger.warning("Screenshot capture timed out (completion handler not called)")
+            return None
         except PermissionError:
             raise
         except Exception as e:
@@ -267,5 +300,4 @@ class MacOSCaptureBackend(BaseCaptureBackend):
 
     async def stop(self) -> None:
         """Release capture resources."""
-        self._filter = None
-        self._config = None
+        self._window_id = None

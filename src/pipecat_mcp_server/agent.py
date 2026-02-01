@@ -125,13 +125,13 @@ class PipecatMCPAgent:
             ),
         )
 
-        screen_capture = ScreenCaptureProcessor()
+        self._screen_capture = ScreenCaptureProcessor()
 
         # Create pipeline
         pipeline = Pipeline(
             [
                 self._transport.input(),
-                screen_capture,
+                self._screen_capture,
                 stt,
                 user_aggregator,
                 tts,
@@ -249,6 +249,28 @@ class PipecatMCPAgent:
                 LLMFullResponseEndFrame(),
             ]
         )
+
+    async def list_windows(self) -> list[dict]:
+        """List all open windows via the screen capture backend.
+
+        Returns:
+            A list of dicts with title, app_name, and window_id fields.
+
+        """
+        windows = await self._screen_capture._backend.list_windows()
+        return [{"title": w.title, "app_name": w.app_name, "window_id": w.window_id} for w in windows]
+
+    async def screen_capture(self, window_id: Optional[int] = None) -> Optional[int]:
+        """Switch screen capture to a different window or full screen.
+
+        Args:
+            window_id: Window ID to capture (from list_windows()), or None for full screen.
+
+        Returns:
+            The window ID if found, or None if the window was not found or capturing full screen.
+
+        """
+        return await self._screen_capture.screen_capture(window_id)
 
     def _create_stt_service(self) -> STTService:
         if sys.platform == "darwin":

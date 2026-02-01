@@ -10,7 +10,7 @@ Pipecat MCP Server gives your AI agents a voice using [Pipecat](https://github.c
 
 The Pipecat MCP Server exposes **voice-related tools** (`start`, `listen`, `speak`, `stop`) to MCP-compatible clients, but **it does not itself provide microphone or speaker access**.
 
-Audio input/output is handled by a **separate audio transport**, such as:
+Audio input/output is handled by a **separate audio/video transport**, such as:
 
 - **Pipecat Playground** (local browser UI)
 - **Daily** (WebRTC room)
@@ -236,44 +236,17 @@ Configure your provider's phone number to point to your ngrok URL, then call you
 
 ## 🖥️ Screen Capture
 
-You can enable screen capture to stream your screen (or a specific window) to the Pipecat Playground or Daily room. This lets you see what's happening on your computer remotely while having a voice conversation with the agent.
+Screen capture is built-in and lets you stream your screen (or a specific window) to your configured transport (e.g. Pipecat Playground or Daily room). This is controlled via MCP tools:
+
+- **`list_windows()`**: lists all open windows with their titles, app names, and IDs
+- **`screen_capture(window_id)`**: starts capturing a specific window, or the full screen if no ID is provided
+
+You can ask your AI agent to list available windows and start screen capture during a voice conversation. For example, say *"show me the available windows"* or *"capture my Cursor window"*.
 
 **Supported platforms:**
 
 - **macOS** — uses ScreenCaptureKit for true window-level capture (not affected by overlapping windows)
 - **Linux (X11)** — uses Xlib for window and full-screen capture
-
-First, install the server with the screen capture dependency:
-
-```bash
-uv tool install "pipecat-ai-mcp-server[screen]"
-```
-
-Then, define the following environment variables:
-
-| Variable                            | Description                                                        |
-|-------------------------------------|--------------------------------------------------------------------|
-| `PIPECAT_MCP_SERVER_SCREEN_CAPTURE` | Set to any value (e.g., `1`) to enable screen capture              |
-| `PIPECAT_MCP_SERVER_SCREEN_WINDOW`  | Optional. Window name to capture (partial match, case-insensitive) |
-
-For example, to capture your entire primary monitor:
-
-```bash
-export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
-
-pipecat-mcp-server
-```
-
-And to capture a specific window:
-
-```bash
-export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
-export PIPECAT_MCP_SERVER_SCREEN_WINDOW="claude"
-
-pipecat-mcp-server
-```
-
-> ℹ️ **Note:** Window capture is based on window coordinates, not content. If another window overlaps the target, the overlapping content will be captured. The capture region updates dynamically if the window is moved. If the specified window is not found, capture falls back to the full screen.
 
 ## 📚 What's Next?
 

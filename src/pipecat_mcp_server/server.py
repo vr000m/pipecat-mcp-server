@@ -65,14 +65,31 @@ async def list_windows() -> list[dict]:
     """List all open windows visible to the screen capture backend.
 
     Returns a list of objects with title, app_name, and window_id fields.
-    """
-    from pipecat_mcp_server.processors.screen_capture.base_capture_backend import (
-        get_capture_backend,
-    )
 
-    backend = get_capture_backend()
-    windows = await backend.list_windows()
-    return [{"title": w.title, "app_name": w.app_name, "window_id": w.window_id} for w in windows]
+    Note: Multiple windows may appear for the same app (e.g., tabs, child
+    frames). When in doubt about which window the user wants, ask for
+    clarification before capturing.
+    """
+    result = await send_command("list_windows")
+    return result.get("windows", [])
+
+
+@mcp.tool()
+async def screen_capture(window_id: int | None = None) -> int | None:
+    """Start or switch screen capture to a window or full screen.
+
+    Captures are streamed through the Pipecat pipeline. Use list_windows()
+    to find available window IDs.
+
+    Args:
+        window_id: Window ID to capture (from list_windows()). If not provided,
+            captures the full screen.
+
+    Returns the window ID if the window was found, or None if it was not found
+    or capturing full screen.
+    """
+    result = await send_command("screen_capture", window_id=window_id)
+    return result.get("window_id")
 
 
 @mcp.tool()

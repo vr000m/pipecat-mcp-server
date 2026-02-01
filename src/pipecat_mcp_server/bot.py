@@ -56,6 +56,14 @@ async def bot(runner_args: RunnerArguments):
                 await agent.speak(request["text"])
                 await send_response({"ok": True})
                 logger.debug(f"Command '{cmd}' finished")
+            elif cmd == "list_windows":
+                windows = await agent.list_windows()
+                await send_response({"windows": windows})
+                logger.debug(f"Command '{cmd}' finished")
+            elif cmd == "screen_capture":
+                matched_id = await agent.screen_capture(request.get("window_id"))
+                await send_response({"ok": True, "window_id": matched_id})
+                logger.debug(f"Command '{cmd}' finished")
             elif cmd == "stop":
                 await agent.stop()
                 await send_response({"ok": True})

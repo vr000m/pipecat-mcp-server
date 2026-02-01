@@ -3,7 +3,7 @@ name: pipecat
 description: Start a voice conversation using the Pipecat MCP server
 ---
 
-Start a voice conversation using the Pipecat MCP server's start(), listen(), speak(), and stop() tools.
+Start a voice conversation using the Pipecat MCP server.
 
 ## Flow
 
@@ -17,7 +17,7 @@ Start a voice conversation using the Pipecat MCP server's start(), listen(), spe
 4. When the user asks you to perform a task:
    - Acknowledge the request with `speak()` (do NOT call `listen()` yet)
    - Perform the work (edit files, run commands, etc.)
-   - Use `speak()` to provide progress updates as needed during the task
+   - IMPORTANT: Call `speak()` frequently to give progress updates — after each significant step (e.g., "Reading the file now", "Making the change", "Done with the first file, moving to the next one"). Never let more than a few tool calls go by in silence.
    - Once the task is complete, use `speak()` to report the result
    - Only then call `listen()` to wait for the next user input
 5. When the user asks a simple question or makes conversation (no task to perform), respond with `speak()` then immediately call `listen()`
@@ -31,4 +31,5 @@ The key principle: `listen()` means "I'm done and ready for the user to talk." N
 - Keep all responses and progress updates to 1-2 short sentences. Brevity is critical for voice.
 - When the user asks you to perform a task (e.g., edit a file, create a PR), verbally acknowledge the request first, then start working on it. Do not work in silence.
 - Before any change (files, PRs, issues, etc.), show the proposed change in the terminal, use `speak()` to ask for verbal confirmation, then call `listen()` to get the user's response before proceeding.
+- When using `list_windows()` and `screen_capture()`, if there are multiple windows for the same app or you're unsure which window the user wants, ask for clarification before capturing.
 - Always call `stop()` when the conversation ends.

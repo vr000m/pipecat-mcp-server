@@ -14,7 +14,6 @@ affected by overlapping windows).
 """
 
 import asyncio
-import os
 from typing import Optional
 
 from loguru import logger
@@ -23,30 +22,18 @@ from pipecat.frames.frames import (
     EndFrame,
     Frame,
     OutputImageRawFrame,
-    StartFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
-# Environment variable names
-ENV_SCREEN_CAPTURE = "PIPECAT_MCP_SERVER_SCREEN_CAPTURE"
-ENV_SCREEN_WINDOW = "PIPECAT_MCP_SERVER_SCREEN_WINDOW"
+from .base_capture_backend import get_capture_backend
 
 
 class ScreenCaptureProcessor(FrameProcessor):
-    """FrameProcessor that periodically captures screenshots.
+    """FrameProcessor that captures screenshots and pushes them downstream.
 
-    This processor captures the screen (or a specific window) once per second
-    and pushes OutputImageRawFrames downstream.
-
-    The processor is only active if the environment variable
-    PIPECAT_MCP_SERVER_SCREEN_CAPTURE is set.
-
-    Optionally, PIPECAT_MCP_SERVER_SCREEN_WINDOW can be set to capture
-    a specific window by name instead of the entire screen.
-
-    Example:
-        export PIPECAT_MCP_SERVER_SCREEN_CAPTURE=1
-        export PIPECAT_MCP_SERVER_SCREEN_WINDOW="Firefox"  # Optional
+    Screen capture is inactive by default. Call ``screen_capture()`` to start
+    capturing a specific window or the full screen. Frames are pushed as
+    ``OutputImageRawFrame`` at the configured interval.
 
     """
 
@@ -63,18 +50,12 @@ class ScreenCaptureProcessor(FrameProcessor):
         self._monitor = monitor
         self._capture_interval = capture_interval
         self._capture_task: Optional[asyncio.Task] = None
-        self._backend = None
-
-        # Check if screen capture is enabled
-        self._enabled = os.getenv(ENV_SCREEN_CAPTURE) is not None
-
-        # Get optional window name
-        self._window_name = os.getenv(ENV_SCREEN_WINDOW)
+        self._backend = get_capture_backend()
 
     async def cleanup(self) -> None:
         """Clean up resources when processor is shutting down."""
         await super().cleanup()
-        await self._stop_capture_task()
+        await self._stop_capture()
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         """Process incoming frames and manage capture task lifecycle.
@@ -86,55 +67,61 @@ class ScreenCaptureProcessor(FrameProcessor):
         """
         await super().process_frame(frame, direction)
 
-        if isinstance(frame, StartFrame):
-            await self._start(frame)
-        elif isinstance(frame, (EndFrame, CancelFrame)):
-            await self._stop_capture_task()
+        if isinstance(frame, (EndFrame, CancelFrame)):
+            await self._stop_capture()
 
         await self.push_frame(frame, direction)
 
-    async def _start(self, frame: StartFrame):
-        if not self._enabled:
-            logger.debug(f"Screen capture disabled. Set {ENV_SCREEN_CAPTURE}=1 to enable.")
-            return
+    async def screen_capture(self, window_id: Optional[int] = None) -> Optional[int]:
+        """Start or restart screen capture for a window or full screen.
 
+        Stops any existing capture before starting the new one.
+
+        Args:
+            window_id: Window ID to capture (from list_windows()),
+                or None for full screen.
+
+        Returns:
+            The window ID if found, or None if the window was not found
+            or capturing full screen.
+
+        """
+        await self._stop_capture()
+        return await self._start_capture(window_id)
+
+    async def _start_capture(self, window_id: Optional[int] = None) -> Optional[int]:
+        """Start capturing from a window or full screen.
+
+        Returns:
+            The window ID if found, or None if the window was not found
+            or capturing full screen.
+
+        """
         try:
-            from .base_capture_backend import get_capture_backend
-
-            self._backend = get_capture_backend()
-            await self._backend.start(self._window_name, self._monitor)
-        except ImportError as e:
-            logger.error(f"Screen capture dependencies not installed: {e}")
-            logger.error("Install with: uv pip install pipecat-ai-mcp-server[screen]")
-            return
-        except RuntimeError as e:
-            logger.error(f"Screen capture not supported: {e}")
-            return
+            matched_id = await self._backend.start(window_id, self._monitor)
         except PermissionError as e:
             logger.error(str(e))
-            return
+            return None
 
-        logger.debug("Screen capture processor enabled")
-        if self._window_name:
-            logger.debug(f"Will capture window: {self._window_name}")
+        if window_id is not None:
+            logger.debug(f"Capturing window ID: {window_id}")
         else:
-            logger.debug(f"Will capture monitor {self._monitor}")
+            logger.debug(f"Capturing monitor {self._monitor}")
 
-        self._create_capture_task()
+        self._capture_task = self.create_task(self._capture_task_handler())
 
-    def _create_capture_task(self) -> None:
-        """Create and start the periodic capture task."""
-        if not self._capture_task:
-            self._capture_task = self.create_task(self._capture_task_handler())
+        # Schedule task if we don't await
+        await asyncio.sleep(0)
 
-    async def _stop_capture_task(self) -> None:
-        """Stop the periodic capture task and release backend."""
+        return matched_id
+
+    async def _stop_capture(self) -> None:
+        """Stop the periodic capture task."""
         if self._capture_task:
             await self.cancel_task(self._capture_task)
             self._capture_task = None
         if self._backend:
             await self._backend.stop()
-            self._backend = None
 
     async def _capture_task_handler(self) -> None:
         """Periodically capture screenshots and push them downstream."""
