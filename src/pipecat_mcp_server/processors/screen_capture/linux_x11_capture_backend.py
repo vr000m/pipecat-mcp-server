@@ -26,9 +26,9 @@ def _ensure_xlib():
     if _display_module is not None:
         return
 
+    import Xlib.display
     import Xlib.X
     import Xlib.Xatom
-    import Xlib.display
 
     _display_module = Xlib.display
     _X_module = Xlib.X
