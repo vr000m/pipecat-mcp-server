@@ -8,7 +8,7 @@
 
 Pipecat MCP Server gives your AI agents a voice using [Pipecat](https://github.com/pipecat-ai/pipecat). It should work with any [MCP](https://modelcontextprotocol.io/)-compatible client:
 
-The Pipecat MCP Server exposes **voice-related tools** (`start`, `listen`, `speak`, `stop`) to MCP-compatible clients, but **it does not itself provide microphone or speaker access**.
+The Pipecat MCP Server exposes **voice-related** and **screen capture** tools to MCP-compatible clients, but **it does not itself provide microphone or speaker access**.
 
 Audio input/output is handled by a **separate audio/video transport**, such as:
 
@@ -17,7 +17,7 @@ Audio input/output is handled by a **separate audio/video transport**, such as:
 - **Phone providers** (Twilio, Telnyx, etc.)
 
 > **MCP clients like Cursor, Claude Code, and Codex control the agent, but they are not audio devices.**
-> To hear or speak, you must also connect via one of the audio transports.
+> To hear, speak or see, you must connect via one of the audio transports.
 
 <p align="center"><video src="https://github.com/user-attachments/assets/0ad14e37-2de7-46df-870a-167aa667df16" width="500" controls></video></p>
 
@@ -71,6 +71,17 @@ For hands-free voice conversations, you will need to auto-approve tool permissio
 The [Pipecat skill](.claude/skills/pipecat/SKILL.md) provides a better voice conversation experience. It asks for verbal confirmation before making changes to files, adding a layer of safety when using broad permissions.
 
 Alternatively, just tell your agent something like `Let's have a voice conversation`. In this case, the agent won't ask for verbal confirmation before making changes.
+
+## 🖥️ Screen Capture
+
+Screen capture is built-in and lets you stream your screen (or a specific window) to your configured transport (e.g. Pipecat Playground or Daily room).
+
+For example, say *"tell me the available windows"* or *"capture my Cursor window"*.
+
+**Supported platforms:**
+
+- **macOS** — uses ScreenCaptureKit for true window-level capture (not affected by overlapping windows)
+- **Linux (X11)** — uses Xlib for window and full-screen capture
 
 ## 💻 MCP Client: Claude Code
 
@@ -233,20 +244,6 @@ pipecat-mcp-server -t twilio -x your-proxy.ngrok.app
 ```
 
 Configure your provider's phone number to point to your ngrok URL, then call your number to connect.
-
-## 🖥️ Screen Capture
-
-Screen capture is built-in and lets you stream your screen (or a specific window) to your configured transport (e.g. Pipecat Playground or Daily room). This is controlled via MCP tools:
-
-- **`list_windows()`**: lists all open windows with their titles, app names, and IDs
-- **`screen_capture(window_id)`**: starts capturing a specific window, or the full screen if no ID is provided
-
-You can ask your AI agent to list available windows and start screen capture during a voice conversation. For example, say *"show me the available windows"* or *"capture my Cursor window"*.
-
-**Supported platforms:**
-
-- **macOS** — uses ScreenCaptureKit for true window-level capture (not affected by overlapping windows)
-- **Linux (X11)** — uses Xlib for window and full-screen capture
 
 ## 📚 What's Next?
 
