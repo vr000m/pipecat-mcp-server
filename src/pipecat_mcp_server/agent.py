@@ -121,6 +121,7 @@ class PipecatMCPAgent:
                         TurnAnalyzerUserTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
                     ]
                 ),
+                vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
             ),
         )
 
@@ -280,7 +281,6 @@ async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
             audio_out_enabled=True,
             video_out_enabled=True,
             audio_in_filter=RNNoiseFilter(),
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
         )
     elif isinstance(runner_args, SmallWebRTCRunnerArguments):
         transport_params["webrtc"] = lambda: TransportParams(
@@ -288,14 +288,12 @@ async def create_agent(runner_args: RunnerArguments) -> PipecatMCPAgent:
             audio_out_enabled=True,
             video_out_enabled=True,
             audio_in_filter=RNNoiseFilter(),
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
         )
     elif isinstance(runner_args, WebSocketRunnerArguments):
         params_callback = lambda: FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             audio_in_filter=RNNoiseFilter(),
-            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
         )
         transport_params["twilio"] = params_callback
         transport_params["telnyx"] = params_callback
