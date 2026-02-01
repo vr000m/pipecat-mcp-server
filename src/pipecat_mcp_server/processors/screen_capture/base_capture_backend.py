@@ -8,11 +8,30 @@
 
 import sys
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+
+@dataclass
+class WindowInfo:
+    """Information about an open window."""
+
+    title: str
+    app_name: str
+    window_id: int
 
 
 class BaseCaptureBackend(ABC):
     """Abstract base class for platform-specific screen capture backends."""
+
+    @abstractmethod
+    async def list_windows(self) -> List[WindowInfo]:
+        """List all open windows.
+
+        Returns:
+            A list of WindowInfo for each visible window.
+
+        """
 
     @abstractmethod
     async def start(self, window_name: Optional[str], monitor: int) -> None:

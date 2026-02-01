@@ -7,12 +7,12 @@
 """Linux X11 screen capture backend using python-xlib."""
 
 import asyncio
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from loguru import logger
 
-from .base_capture_backend import BaseCaptureBackend
+from .base_capture_backend import BaseCaptureBackend, WindowInfo
 
 # Lazy references populated by _ensure_xlib()
 _display_module = None
@@ -146,6 +146,10 @@ class LinuxX11CaptureBackend(BaseCaptureBackend):
         """Initialize the Linux X11 capture backend."""
         self._display = None
         self._window = None
+
+    async def list_windows(self) -> List[WindowInfo]:
+        """List all open windows via X11. Not yet implemented."""
+        raise NotImplementedError("list_windows is not yet implemented for Linux X11")
 
     async def start(self, window_name: Optional[str], monitor: int) -> None:
         """Set up the X11 display and find the target window.

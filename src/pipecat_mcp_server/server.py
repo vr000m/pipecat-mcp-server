@@ -61,6 +61,21 @@ async def speak(text: str) -> bool:
 
 
 @mcp.tool()
+async def list_windows() -> list[dict]:
+    """List all open windows visible to the screen capture backend.
+
+    Returns a list of objects with title, app_name, and window_id fields.
+    """
+    from pipecat_mcp_server.processors.screen_capture.base_capture_backend import (
+        get_capture_backend,
+    )
+
+    backend = get_capture_backend()
+    windows = await backend.list_windows()
+    return [{"title": w.title, "app_name": w.app_name, "window_id": w.window_id} for w in windows]
+
+
+@mcp.tool()
 async def stop() -> bool:
     """Stop the voice pipeline and clean up resources.
 

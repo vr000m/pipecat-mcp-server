@@ -11,11 +11,11 @@ initialization at import time, which crashes in non-GUI processes.
 """
 
 import asyncio
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from loguru import logger
 
-from .base_capture_backend import BaseCaptureBackend
+from .base_capture_backend import BaseCaptureBackend, WindowInfo
 
 # Lazy references populated by _ensure_frameworks()
 _Quartz = None
@@ -176,6 +176,23 @@ class MacOSCaptureBackend(BaseCaptureBackend):
         """Initialize the macOS capture backend."""
         self._filter: Optional[object] = None
         self._config: Optional[object] = None
+
+    async def list_windows(self) -> List[WindowInfo]:
+        """List all open windows via ScreenCaptureKit."""
+        _ensure_frameworks()
+
+        content = await _get_shareable_content()
+        windows = []
+        for window in content.windows():
+            title = window.title() or ""
+            app = window.owningApplication()
+            app_name = app.applicationName() if app else ""
+            windows.append(WindowInfo(
+                title=title,
+                app_name=app_name,
+                window_id=window.windowID(),
+            ))
+        return windows
 
     async def start(self, window_name: Optional[str], monitor: int) -> None:
         """Set up the ScreenCaptureKit filter and configuration.
