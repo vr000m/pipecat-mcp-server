@@ -12,6 +12,7 @@ services, allowing an MCP client to listen for user speech and speak responses.
 """
 
 import asyncio
+import os
 import sys
 from typing import Any, Optional
 
@@ -294,7 +295,14 @@ class PipecatMCPAgent:
         return await self._vision.get_result()
 
     def _create_stt_service(self) -> STTService:
+        stt_service = os.environ.get("STT_SERVICE", "").lower()
+
         if sys.platform == "darwin":
+            if stt_service == "voxtral":
+                from pipecat_mcp_server.processors.voxtral_stt import VoxtralSTTService
+
+                return VoxtralSTTService()
+
             return WhisperSTTServiceMLX(model="mlx-community/whisper-large-v3-turbo")
         else:
             return WhisperSTTService(model="Systran/faster-distil-whisper-large-v3")
