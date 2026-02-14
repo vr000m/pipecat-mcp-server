@@ -17,7 +17,7 @@ from pipecat.services.stt_service import SegmentedSTTService
 from pipecat.transcriptions.language import Language
 from pipecat.utils.time import time_now_iso8601
 
-DEFAULT_MODEL = "mistralai/Voxtral-Mini-4B-Realtime-2602"
+DEFAULT_MODEL = "mlx-community/Voxtral-Mini-4B-Realtime-6bit"
 
 
 class VoxtralSTTService(SegmentedSTTService):
