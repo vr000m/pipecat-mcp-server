@@ -100,9 +100,7 @@ class VoxtralSTTService(SegmentedSTTService):
             eos_token_id=self._sp.eos_id,
         )
 
-        return self._sp.decode(
-            output_tokens, special_token_policy=SpecialTokenPolicy.IGNORE
-        )
+        return self._sp.decode(output_tokens, special_token_policy=SpecialTokenPolicy.IGNORE)
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:
         """Transcribe audio using Voxtral Realtime via voxmlx.

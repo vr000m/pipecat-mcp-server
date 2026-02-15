@@ -124,9 +124,7 @@ class VoxtralStreamingSTTService(STTService):
         from voxmlx import _build_prompt_tokens, load_model
 
         delay_ms = self._num_delay_tokens * MS_PER_TOKEN
-        logger.info(
-            f"Loading Voxtral streaming model: {self.model_name} (delay={delay_ms}ms)..."
-        )
+        logger.info(f"Loading Voxtral streaming model: {self.model_name} (delay={delay_ms}ms)...")
         self._model, self._sp, self._config = load_model(self.model_name)
         self._prompt_tokens, _ = _build_prompt_tokens(
             self._sp, num_delay_tokens=self._num_delay_tokens
@@ -253,9 +251,7 @@ class VoxtralStreamingSTTService(STTService):
             elif isinstance(item, int):
                 # Token ID — decode only the new token (O(1) per token)
                 self._utterance_tokens.append(item)
-                new_text = self._sp.decode(
-                    [item], special_token_policy=SpecialTokenPolicy.IGNORE
-                )
+                new_text = self._sp.decode([item], special_token_policy=SpecialTokenPolicy.IGNORE)
                 self._partial_text += new_text
 
                 # Emit InterimTranscriptionFrame on word boundaries
@@ -434,17 +430,13 @@ class VoxtralStreamingSTTService(STTService):
             # Handle end-of-utterance: right-pad and flush
             if sentinel == "end":
                 if decoder_cache is not None and y is not None:
-                    right_pad = np.zeros(
-                        _N_RIGHT_PAD_TOKENS * SAMPLES_PER_TOKEN, dtype=np.float32
-                    )
+                    right_pad = np.zeros(_N_RIGHT_PAD_TOKENS * SAMPLES_PER_TOKEN, dtype=np.float32)
                     flush_chunk = np.concatenate([pending_audio, right_pad])
                     pending_audio = np.zeros(0, dtype=np.float32)
 
                     mel, audio_tail = log_mel_spectrogram_step(flush_chunk, audio_tail)
                     new_embeds, conv1_tail, conv2_tail, encoder_cache, ds_buf = (
-                        self._model.encode_step(
-                            mel, conv1_tail, conv2_tail, encoder_cache, ds_buf
-                        )
+                        self._model.encode_step(mel, conv1_tail, conv2_tail, encoder_cache, ds_buf)
                     )
                     if new_embeds is not None:
                         # Materialize the lazy MLX computation
@@ -473,19 +465,15 @@ class VoxtralStreamingSTTService(STTService):
             # Encode new audio
             if first_cycle and len(pending_audio) >= SAMPLES_PER_TOKEN:
                 # First cycle: feed left-pad + available audio
-                left_pad = np.zeros(
-                    _N_LEFT_PAD_TOKENS * SAMPLES_PER_TOKEN, dtype=np.float32
-                )
+                left_pad = np.zeros(_N_LEFT_PAD_TOKENS * SAMPLES_PER_TOKEN, dtype=np.float32)
                 n_feed = (len(pending_audio) // SAMPLES_PER_TOKEN) * SAMPLES_PER_TOKEN
                 chunk = np.concatenate([left_pad, pending_audio[:n_feed]])
                 pending_audio = pending_audio[n_feed:]
                 n_audio_samples_fed += n_feed
 
                 mel, audio_tail = log_mel_spectrogram_step(chunk, audio_tail)
-                new_embeds, conv1_tail, conv2_tail, encoder_cache, ds_buf = (
-                    self._model.encode_step(
-                        mel, conv1_tail, conv2_tail, encoder_cache, ds_buf
-                    )
+                new_embeds, conv1_tail, conv2_tail, encoder_cache, ds_buf = self._model.encode_step(
+                    mel, conv1_tail, conv2_tail, encoder_cache, ds_buf
                 )
                 if new_embeds is not None:
                     # Materialize the lazy MLX computation
@@ -501,10 +489,8 @@ class VoxtralStreamingSTTService(STTService):
                 n_audio_samples_fed += n_feed
 
                 mel, audio_tail = log_mel_spectrogram_step(chunk, audio_tail)
-                new_embeds, conv1_tail, conv2_tail, encoder_cache, ds_buf = (
-                    self._model.encode_step(
-                        mel, conv1_tail, conv2_tail, encoder_cache, ds_buf
-                    )
+                new_embeds, conv1_tail, conv2_tail, encoder_cache, ds_buf = self._model.encode_step(
+                    mel, conv1_tail, conv2_tail, encoder_cache, ds_buf
                 )
                 if new_embeds is not None:
                     # Materialize the lazy MLX computation
@@ -532,20 +518,14 @@ class VoxtralStreamingSTTService(STTService):
                     time.sleep(_POLL_INTERVAL_SEC)
                     continue
 
-                decoder_cache = [
-                    RotatingKVCache(sliding_window) for _ in range(self._n_layers)
-                ]
+                decoder_cache = [RotatingKVCache(sliding_window) for _ in range(self._n_layers)]
 
                 prefix_embeds = self._text_embeds + audio_embeds[: self._prefix_len]
                 prefix_embeds = prefix_embeds[None, :, :]
 
-                logits = self._model.decode(
-                    prefix_embeds, self._t_cond, "causal", decoder_cache
-                )
+                logits = self._model.decode(prefix_embeds, self._t_cond, "causal", decoder_cache)
                 # Materialize the lazy MLX computation for logits and KV cache
-                mx.eval(
-                    logits, *[x for c in decoder_cache for x in (c.keys, c.values)]
-                )
+                mx.eval(logits, *[x for c in decoder_cache for x in (c.keys, c.values)])
 
                 y = sample(logits)
                 mx.async_eval(y)
@@ -554,9 +534,7 @@ class VoxtralStreamingSTTService(STTService):
                 n_total_decoded = self._prefix_len
                 prefilled = True
 
-                n_decodable = min(
-                    audio_embeds.shape[0], safe_total - n_total_decoded
-                )
+                n_decodable = min(audio_embeds.shape[0], safe_total - n_total_decoded)
 
             if n_decodable <= 0:
                 time.sleep(_POLL_INTERVAL_SEC)
